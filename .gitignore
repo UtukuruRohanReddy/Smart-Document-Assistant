@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+data/
+tmp_validation/
+.pytest_cache/
+.coverage
+htmlcov/
+*.index
+chunks_metadata.json
