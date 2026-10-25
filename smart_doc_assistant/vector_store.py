@@ -9,6 +9,9 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 
+OPENAI_EMBEDDING_BATCH_SIZE = 64
+
+
 class EmbeddingProvider:
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2", openai_api_key: Optional[str] = None):
         self.model_name = model_name
@@ -36,6 +39,26 @@ class EmbeddingProvider:
         embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
         return np.asarray(embeddings, dtype="float32")
 
+    def _embed_with_openai(self, texts: List[str]) -> np.ndarray:
+        if self.client is None:
+            raise RuntimeError(
+                "This document index uses OpenAI embeddings. Enter a valid OpenAI API key to search or add documents."
+            )
+        batches = []
+        try:
+            for start in range(0, len(texts), OPENAI_EMBEDDING_BATCH_SIZE):
+                response = self.client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=texts[start:start + OPENAI_EMBEDDING_BATCH_SIZE],
+                )
+                batches.extend(item.embedding for item in response.data)
+        except Exception as exc:
+            raise RuntimeError(
+                "OpenAI embedding failed. Check that your API key is valid and has API billing enabled. "
+                "If your existing index uses local embeddings, clear it before reprocessing with OpenAI."
+            ) from exc
+        return np.asarray(batches, dtype="float32")
+
     def embed_texts(
         self,
         texts: List[str],
@@ -47,33 +70,9 @@ class EmbeddingProvider:
         if target_dimension == 384:
             vectors = self._embed_locally(texts)
         elif target_dimension is not None:
-            if self.client is None:
-                raise RuntimeError(
-                    "This document index uses OpenAI embeddings. Enter a valid OpenAI API key to search or add documents."
-                )
-            try:
-                response = self.client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=texts,
-                )
-                vectors = [item.embedding for item in response.data]
-                vectors = np.asarray(vectors, dtype="float32")
-            except Exception as exc:
-                raise RuntimeError(
-                    "OpenAI embedding failed. Check that your API key is valid and has API billing enabled. "
-                    "If your existing index uses local embeddings, clear it before reprocessing with OpenAI."
-                ) from exc
+            vectors = self._embed_with_openai(texts)
         elif self.client is not None:
-            try:
-                response = self.client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=texts,
-                )
-                vectors = [item.embedding for item in response.data]
-            except Exception as exc:
-                raise RuntimeError(
-                    "OpenAI embedding failed. Check that your API key is valid and has API billing enabled."
-                ) from exc
+            vectors = self._embed_with_openai(texts)
         else:
             vectors = self._embed_locally(texts)
 
@@ -111,15 +110,30 @@ class FAISSDocumentStore:
         if self.metadata_path.exists():
             try:
                 self._metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                self._metadata = []
-                self.metadata_path.write_text("[]", encoding="utf-8")
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Document metadata is corrupted: {self.metadata_path}. "
+                    "Restore a valid backup or clear the local data directory."
+                ) from exc
+            if not isinstance(self._metadata, list) or any(
+                not isinstance(item, dict)
+                or not {"id", "file_name", "text", "source"}.issubset(item)
+                for item in self._metadata
+            ):
+                raise ValueError(
+                    f"Document metadata has an invalid structure: {self.metadata_path}."
+                )
 
     def _load_index(self):
         if self.index_path.exists():
             self._index = faiss.read_index(str(self.index_path))
         else:
             self._index = faiss.IndexFlatIP(384)
+        if self._index.ntotal != len(self._metadata):
+            raise ValueError(
+                "The FAISS index and document metadata do not match. "
+                "Clear the document index and reprocess the affected documents."
+            )
 
     def _save_index(self):
         if self._index is not None:

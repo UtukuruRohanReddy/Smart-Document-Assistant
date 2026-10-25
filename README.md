@@ -2,13 +2,19 @@
 
 A Streamlit app for searching and summarizing PDF, DOCX, and TXT documents. It extracts text, creates overlapping chunks, stores embeddings locally in FAISS, and displays source passages for answers.
 
+## What you can do
+
+- Get a plain-language document overview and key takeaways.
+- Ask questions about one document or search across a selected set.
+- Inspect the exact retrieved passages and source labels behind each answer.
+- Add or replace documents, remove individual documents, or clear the local index.
+
 ## Features
 
-- Upload and index PDF, DOCX, and TXT files.
-- Search one or more indexed documents with natural-language questions.
-- Summarize a document in plain language with an overview and key points.
-- Use OpenAI for generated answers, summaries, and embeddings, or use local sentence-transformer embeddings for search.
-- View exact retrieved source snippets, and manage individual indexed documents.
+- OpenAI-powered answers and summaries, with a local extractive summary when no key is configured.
+- Local sentence-transformer embeddings when no key is configured; OpenAI embeddings for newly indexed documents when configured.
+- FAISS similarity search with bounded embedding request batches.
+- Persistent local index and metadata, kept out of Git.
 
 ## Requirements
 
@@ -35,11 +41,21 @@ OPENAI_API_KEY = "your-key-here"
 
 Never commit real API keys or secrets. The key is used to send document text to OpenAI for the requested AI features.
 
+## Run tests
+
+The test suite uses Python's standard library `unittest`:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
 ## Data and privacy
 
 Uploaded files and local FAISS data are stored in the ignored `data/` directory. That directory is intentionally excluded from Git. Do not commit uploaded documents, generated indexes, metadata, API keys, or other private data.
 
+Documents are processed locally for text extraction and FAISS storage. When OpenAI features are used, relevant document text is sent to OpenAI to generate embeddings, answers, or summaries.
+
 ## Notes
 
 - The first local embedding run downloads the `sentence-transformers/all-MiniLM-L6-v2` model.
-- An existing index retains its embedding dimension. To switch an existing library between local and OpenAI embeddings, clear the index and reprocess the documents.
+- An existing index retains its embedding model. Clear the index before intentionally changing the embedding provider for the full library.

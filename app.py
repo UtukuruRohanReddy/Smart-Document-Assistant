@@ -43,13 +43,35 @@ def render_source_context(source: dict) -> None:
     st.code(source.get("text", "No context available."), language="text")
 
 
+def apply_app_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        .block-container {max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem;}
+        [data-testid="stAppViewContainer"] {background: #f7f8fc;}
+        [data-testid="stHeader"] {background: rgba(247, 248, 252, 0.85);}
+        [data-testid="stSidebar"] {background: #ffffff; border-right: 1px solid #e8eaf2;}
+        [data-testid="stFileUploader"] section {border: 1px dashed #7782ed; background: #ffffff;}
+        div[data-testid="stMetric"] {background: #ffffff; border: 1px solid #e8eaf2;
+          padding: 1rem 1.1rem; border-radius: 14px;}
+        div.stButton > button[kind="primary"] {border-radius: 10px; font-weight: 650;}
+        .stChatMessage {border: 1px solid #e8eaf2; border-radius: 14px; background: #ffffff;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="📄", layout="wide")
+    apply_app_styles()
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("document_summaries", {})
+
     st.title(APP_TITLE)
     st.caption(
         "Upload a document for a clear, easy-to-read summary or ask questions grounded in its content."
     )
-    st.session_state.setdefault("document_summaries", {})
 
     with st.sidebar:
         st.header("AI settings")
@@ -75,13 +97,13 @@ def main() -> None:
             st.info("Add an OpenAI API key to generate AI summaries and answers. Local search will still work.")
 
         top_k = st.slider("Source passages per answer", min_value=1, max_value=8, value=4)
-        if st.button("Clear chat history"):
+        if st.button("Clear chat history", use_container_width=True):
             st.session_state.messages = []
             st.rerun()
 
         st.divider()
         st.caption("Clearing the index removes all indexed documents.")
-        clear_button = st.button("Clear document index")
+        clear_button = st.button("Clear document index", use_container_width=True)
 
     st.subheader("Upload documents")
     uploaded_files = st.file_uploader(
@@ -110,6 +132,7 @@ def main() -> None:
             st.session_state.messages = []
             st.session_state.document_summaries = {}
             st.success("Document index cleared.")
+            st.rerun()
         except Exception as exc:  # pragma: no cover
             st.error(f"Failed to clear the document index: {exc}")
 
@@ -145,8 +168,14 @@ def main() -> None:
                 st.error(f"Could not process {uploaded_file.name}: {exc}")
             progress.progress(index / len(uploaded_files))
 
-        if processed_count:
+        failed_count = len(uploaded_files) - processed_count
+        if processed_count and not failed_count:
             st.success(f"Ready to search {processed_count} document(s).")
+        elif processed_count:
+            st.warning(
+                f"Indexed {processed_count} document(s); {failed_count} could not be processed. "
+                "Review the errors above."
+            )
 
     documents = assistant.document_summary()
     if documents:
@@ -200,9 +229,6 @@ def main() -> None:
                             st.markdown(f"- {point}")
 
     st.subheader("Ask a question")
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
     document_names = [item["file_name"] for item in documents]
     selected_documents = st.multiselect(
         "Search in",
@@ -218,9 +244,9 @@ def main() -> None:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message.get("sources"):
-                st.markdown("**Exact source passages used:**")
-                for source in message["sources"]:
-                    render_source_context(source)
+                with st.expander(f"View {len(message['sources'])} exact source passage(s)"):
+                    for source in message["sources"]:
+                        render_source_context(source)
 
     user_question = st.chat_input(
         "Ask about the selected documents...",
@@ -242,9 +268,9 @@ def main() -> None:
             st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
             with st.chat_message("assistant"):
                 st.markdown(answer)
-                st.markdown("**Exact source passages used:**")
-                for source in sources:
-                    render_source_context(source)
+                with st.expander(f"View {len(sources)} exact source passage(s)"):
+                    for source in sources:
+                        render_source_context(source)
         except Exception as exc:
             error_message = f"I couldn't answer that question from the indexed document: {exc}"
             st.session_state.messages.append({"role": "assistant", "content": error_message, "sources": []})
