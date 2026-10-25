@@ -1,5 +1,7 @@
 # Smart Document Assistant
 
+[![Tests](https://github.com/UtukuruRohanReddy/Smart-Document-Assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/UtukuruRohanReddy/Smart-Document-Assistant/actions/workflows/tests.yml)
+
 A Streamlit app for searching and summarizing PDF, DOCX, and TXT documents. It extracts text, creates overlapping chunks, stores embeddings locally in FAISS, and displays source passages for answers.
 
 ## What you can do
@@ -48,6 +50,8 @@ The test suite uses Python's standard library `unittest`:
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+The same compile and unit-test checks run in GitHub Actions on pushes and pull requests to `main`.
 
 ## Data and privacy
 

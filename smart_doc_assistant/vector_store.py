@@ -6,7 +6,6 @@ from typing import Any, List, Optional
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 
 OPENAI_EMBEDDING_BATCH_SIZE = 64
@@ -31,6 +30,8 @@ class EmbeddingProvider:
 
     def _get_local_model(self):
         if self._local_model is None:
+            from sentence_transformers import SentenceTransformer
+
             self._local_model = SentenceTransformer(self.model_name)
         return self._local_model
 
