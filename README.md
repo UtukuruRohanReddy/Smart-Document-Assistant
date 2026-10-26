@@ -2,6 +2,8 @@
 
 [![Tests](https://github.com/UtukuruRohanReddy/Smart-Document-Assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/UtukuruRohanReddy/Smart-Document-Assistant/actions/workflows/tests.yml)
 
+Live demo: https://smart-document-assistant-8opf.onrender.com/
+
 A Streamlit app for searching and summarizing PDF, DOCX, and TXT documents. It extracts text, creates overlapping chunks, stores embeddings locally in a NumPy index, and displays source passages for answers.
 
 ## What you can do
@@ -27,6 +29,22 @@ A Streamlit app for searching and summarizing PDF, DOCX, and TXT documents. It e
 - Python 3.10 or newer.
 - Google Gemini API key for AI-generated summaries, answers, and new document embeddings.
 - Without a key, local embeddings and extractive summaries are used.
+
+## Deployment
+
+This app is deployed on Render:
+
+- Live demo: https://smart-document-assistant-8opf.onrender.com/
+- GitHub repository: https://github.com/UtukuruRohanReddy/Smart-Document-Assistant
+
+For production hosting on Render, set these environment variables in the Render dashboard:
+
+```text
+GEMINI_API_KEY=your-google-gemini-api-key
+SMART_DOC_DATA_DIR=/var/data/smart-doc
+```
+
+Use a Render persistent disk mounted at `/var/data` so uploaded files and the local index survive deploys and restarts.
 
 ## Setup
 
@@ -90,10 +108,6 @@ The default `data/` directory is local to the app process. Many hosted app platf
 ```text
 SMART_DOC_DATA_DIR=/mnt/smart-doc-data
 ```
-
-```text
-APP Link :- https://smart-document-assistant-8opf.onrender.com/
-``
 
 The app creates the directory if needed. A persistent volume must be configured by the hosting provider; setting a path alone cannot make an ephemeral deployment persistent. Keep the volume private because it contains uploaded document text and indexes.
 
