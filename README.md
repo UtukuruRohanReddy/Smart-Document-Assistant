@@ -91,6 +91,10 @@ The default `data/` directory is local to the app process. Many hosted app platf
 SMART_DOC_DATA_DIR=/mnt/smart-doc-data
 ```
 
+```text
+APP Link :- https://smart-document-assistant-8opf.onrender.com/
+``
+
 The app creates the directory if needed. A persistent volume must be configured by the hosting provider; setting a path alone cannot make an ephemeral deployment persistent. Keep the volume private because it contains uploaded document text and indexes.
 
 ## Notes
