@@ -24,6 +24,105 @@ STOP_WORDS = {
     "would", "you", "your", "yours",
 }
 
+GEMINI_QUOTA_WARNING = (
+    "Google Gemini has reached its API quota. A local extractive result is shown instead. "
+    "Check your Google AI Studio usage and quota settings to restore AI-generated results."
+)
+GEMINI_CONNECTION_WARNING = (
+    "Google Gemini could not be reached. A local extractive result is shown instead. "
+    "Check your internet connection and try again later."
+)
+GEMINI_UNAVAILABLE_WARNING = (
+    "Google Gemini is temporarily unavailable or busy. A local extractive result is shown instead. "
+    "Try the AI feature again later."
+)
+GEMINI_AUTH_WARNING = (
+    "Google Gemini rejected the configured API key. A local result is shown instead. "
+    "Replace it with a valid Google AI Studio API key from https://aistudio.google.com/apikey."
+)
+
+
+def is_ai_quota_error(error: Exception) -> bool:
+    current_error: BaseException | None = error
+    while current_error is not None:
+        message = str(current_error).lower()
+        if (
+            "insufficient_quota" in message
+            or "credit_balance_exhausted" in message
+            or "resource_exhausted" in message
+            or "quota" in message
+            or "429" in message
+        ):
+            return True
+        current_error = current_error.__cause__ or current_error.__context__
+    return False
+
+
+def is_ai_connection_error(error: Exception) -> bool:
+    current_error: BaseException | None = error
+    while current_error is not None:
+        message = str(current_error).lower()
+        error_type = type(current_error).__name__.lower()
+        if (
+            "timeout" in error_type
+            or "connectionerror" in error_type
+            or "504" in message
+            or "deadline_exceeded" in message
+            or "timed out" in message
+            or "connection error" in message
+            or "connection failed" in message
+            or "disconnected" in message
+            or "server disconnected" in message
+        ):
+            return True
+        current_error = current_error.__cause__ or current_error.__context__
+    return False
+
+
+def is_ai_auth_error(error: Exception) -> bool:
+    current_error: BaseException | None = error
+    while current_error is not None:
+        message = str(current_error).lower()
+        error_type = type(current_error).__name__.lower()
+        if (
+            "invalid_api_key" in message
+            or "incorrect api key" in message
+            or "authenticationerror" in error_type
+            or "api key not valid" in message
+            or "api_key_invalid" in message
+        ):
+            return True
+        current_error = current_error.__cause__ or current_error.__context__
+    return False
+
+
+def is_ai_service_unavailable(error: Exception) -> bool:
+    current_error: BaseException | None = error
+    while current_error is not None:
+        message = str(current_error).lower()
+        if (
+            "503" in message
+            or "service_unavailable" in message
+            or "service unavailable" in message
+            or "temporarily unavailable" in message
+            or "high demand" in message
+        ):
+            return True
+        current_error = current_error.__cause__ or current_error.__context__
+    return False
+
+
+def ai_fallback_warning(error: Exception) -> str | None:
+    if is_ai_auth_error(error):
+        return GEMINI_AUTH_WARNING
+    if is_ai_quota_error(error):
+        return GEMINI_QUOTA_WARNING
+    if is_ai_service_unavailable(error):
+        return GEMINI_UNAVAILABLE_WARNING
+    if is_ai_connection_error(error):
+        return GEMINI_CONNECTION_WARNING
+    return None
+
 
 def _sentences(text: str) -> List[str]:
     normalized = re.sub(r"\s+", " ", text).strip()
@@ -103,20 +202,22 @@ def _call_summary_model(client: Any, text: str, *, partial: bool) -> dict[str, A
         instruction += " This is one section of a longer document; retain its important facts."
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": instruction},
-                {"role": "user", "content": text},
-            ],
-            temperature=0.2,
-            max_tokens=600,
-            response_format={"type": "json_object"},
+        from google.genai import types
+
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=text,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                temperature=0.2,
+                max_output_tokens=600,
+                response_mime_type="application/json",
+            ),
         )
     except Exception as exc:
-        raise RuntimeError(f"AI summarization failed: {exc}") from exc
+        raise RuntimeError(f"Gemini summarization failed: {exc}") from exc
 
-    content = response.choices[0].message.content
+    content = response.text
     if not content:
         raise RuntimeError("The AI summarizer returned an empty response.")
     try:

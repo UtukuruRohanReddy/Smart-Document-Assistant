@@ -1,36 +1,66 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from smart_doc_assistant.rag_engine import SmartDocumentAssistant
 
 
 APP_TITLE = "Smart Document Assistant"
-DATA_DIR = Path(__file__).resolve().parent / "data"
-CACHE_VERSION = "document-summaries-v3"
+load_dotenv(Path(__file__).resolve().parent / ".env")
+os.environ.pop("GOOGLE_API_KEY", None)
+APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("SMART_DOC_DATA_DIR", str(APP_DIR / "data"))).expanduser().resolve()
+CACHE_VERSION = "gemini-document-summaries-v6-gemini-deadline"
+
+
+def unique_document_name(file_name: str, existing_names: set[str] | None = None) -> str:
+    """Return a sanitized, collision-safe document name."""
+    candidate = Path(file_name).name.strip()
+    if not candidate:
+        raise ValueError("The uploaded file has no valid filename.")
+
+    root = Path(candidate)
+    stem = root.stem or root.name
+    suffix = root.suffix
+    safe_stem = re.sub(r"[^A-Za-z0-9_. -]+", "_", stem).strip()
+    if not safe_stem:
+        safe_stem = "document"
+    safe_name = f"{safe_stem}{suffix}"
+
+    existing = existing_names or set()
+    counter = 2
+    while safe_name in existing:
+        safe_name = f"{safe_stem} ({counter}){suffix}"
+        counter += 1
+    return safe_name
 
 
 @st.cache_resource
 def get_assistant(
-    openai_api_key: str | None = None,
+    gemini_api_key: str | None = None,
+    storage_dir: str = str(DATA_DIR),
     cache_version: str = CACHE_VERSION,
 ) -> SmartDocumentAssistant:
     del cache_version
-    return SmartDocumentAssistant(storage_dir=DATA_DIR, openai_api_key=openai_api_key or None)
+    return SmartDocumentAssistant(
+        storage_dir=storage_dir,
+        gemini_api_key=gemini_api_key or None,
+    )
 
 
-def configured_openai_key() -> str:
+def configured_gemini_key() -> str:
     try:
-        secrets_key = st.secrets.get("OPENAI_API_KEY", "")
+        secrets_key = st.secrets.get("GEMINI_API_KEY", "")
     except (StreamlitSecretNotFoundError, KeyError):
         secrets_key = ""
     return (
-        st.session_state.get("openai_api_key", "").strip()
-        or os.getenv("OPENAI_API_KEY", "").strip()
+        os.getenv("GEMINI_API_KEY", "").strip()
         or str(secrets_key).strip()
     )
 
@@ -43,19 +73,68 @@ def render_source_context(source: dict) -> None:
     st.code(source.get("text", "No context available."), language="text")
 
 
-def apply_app_styles() -> None:
+def apply_app_styles(theme: str = "Light") -> None:
+    palette = {
+        "Light": {
+            "bg": "#f1f5f9",
+            "panel": "#ffffff",
+            "panel_alt": "#f8fafc",
+            "border": "#dbe3ef",
+            "text": "#172033",
+            "muted": "#596579",
+            "accent": "#4f46e5",
+            "accent_soft": "#eef2ff",
+        },
+        "Dark": {
+            "bg": "#0f172a",
+            "panel": "#111827",
+            "panel_alt": "#172033",
+            "border": "#2b3a4f",
+            "text": "#edf2ff",
+            "muted": "#b9c7e4",
+            "accent": "#9aa8ff",
+            "accent_soft": "#1d2541",
+        },
+        "Midnight": {
+            "bg": "#050816",
+            "panel": "#0b1220",
+            "panel_alt": "#121c2c",
+            "border": "#2a3550",
+            "text": "#edf4ff",
+            "muted": "#aebbd7",
+            "accent": "#6ed6ff",
+            "accent_soft": "#101d2a",
+        },
+    }
+    colors = palette.get(theme, palette["Light"])
     st.markdown(
-        """
+        f"""
         <style>
-        .block-container {max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem;}
-        [data-testid="stAppViewContainer"] {background: #f7f8fc;}
-        [data-testid="stHeader"] {background: rgba(247, 248, 252, 0.85);}
-        [data-testid="stSidebar"] {background: #ffffff; border-right: 1px solid #e8eaf2;}
-        [data-testid="stFileUploader"] section {border: 1px dashed #7782ed; background: #ffffff;}
-        div[data-testid="stMetric"] {background: #ffffff; border: 1px solid #e8eaf2;
-          padding: 1rem 1.1rem; border-radius: 14px;}
-        div.stButton > button[kind="primary"] {border-radius: 10px; font-weight: 650;}
-        .stChatMessage {border: 1px solid #e8eaf2; border-radius: 14px; background: #ffffff;}
+        :root {{
+            --app-bg: {colors['bg']};
+            --panel-bg: {colors['panel']};
+            --panel-alt: {colors['panel_alt']};
+            --border-color: {colors['border']};
+            --text-color: {colors['text']};
+            --muted-color: {colors['muted']};
+            --accent-color: {colors['accent']};
+            --accent-soft: {colors['accent_soft']};
+        }}
+        .block-container {{max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem;}}
+        [data-testid="stAppViewContainer"] {{background: var(--app-bg); color: var(--text-color);}}
+        [data-testid="stHeader"] {{background: rgba(0,0,0,0.12);}}
+        [data-testid="stSidebar"] {{background: var(--panel-bg); border-right: 1px solid var(--border-color);}}
+        [data-testid="stFileUploader"] section {{border: 1px dashed var(--accent-color); background: var(--panel-alt);}}
+        div[data-testid="stMetric"] {{background: var(--panel-bg); border: 1px solid var(--border-color); padding: 1rem 1.1rem; border-radius: 14px;}}
+        div.stButton > button[kind="primary"] {{border-radius: 10px; font-weight: 650; background: var(--accent-color); border-color: var(--accent-color); color: #ffffff;}}
+        div.stButton > button {{border-radius: 10px;}}
+        .stChatMessage {{border: 1px solid var(--border-color); border-radius: 14px; background: var(--panel-bg); color: var(--text-color);}}
+        .stExpander {{border: 1px solid var(--border-color); border-radius: 12px; background: var(--panel-bg);}}
+        .stCode, pre {{background: var(--panel-alt); color: var(--text-color);}}
+        .stAlert, .stInfo, .stSuccess, .stWarning, .stError {{border-radius: 12px;}}
+        .stMarkdown {{color: var(--text-color);}}
+        .stCaption {{color: var(--muted-color);}}
+        h1, h2, h3, h4, h5, h6 {{color: var(--text-color);}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -64,7 +143,6 @@ def apply_app_styles() -> None:
 
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="📄", layout="wide")
-    apply_app_styles()
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("document_summaries", {})
 
@@ -76,25 +154,29 @@ def main() -> None:
     with st.sidebar:
         st.header("AI settings")
         st.caption(
-            "OpenAI generates summaries and answers. New indexes use OpenAI embeddings when a key is configured; "
+            "Google Gemini generates summaries and answers. New indexes use Gemini embeddings when a key is configured; "
             "existing indexes keep their current embedding model."
         )
-        api_key_input = st.text_input(
-            "OpenAI API key",
-            value=st.session_state.get("openai_api_key", ""),
-            type="password",
-            placeholder="sk-...",
-            help="The app sends document text to OpenAI for AI features. Or configure OPENAI_API_KEY in your environment or Streamlit secrets.",
+        st.subheader("Appearance")
+        theme_options = ["Light", "Dark", "Midnight"]
+        st.session_state.setdefault("app_theme_v2", "Dark")
+        if st.session_state.app_theme_v2 not in theme_options:
+            st.session_state.app_theme_v2 = "Dark"
+        theme = st.selectbox(
+            "Theme",
+            options=theme_options,
+            key="app_theme_v2",
+            help="Choose a visual theme for the app.",
         )
-        if api_key_input.strip():
-            st.session_state.openai_api_key = api_key_input.strip()
-        elif "openai_api_key" in st.session_state:
-            del st.session_state.openai_api_key
-        api_key = configured_openai_key()
+
+        api_key = configured_gemini_key()
         if api_key:
-            st.success("OpenAI is enabled for this session.")
+            st.success("Google Gemini API key is available.")
         else:
-            st.info("Add an OpenAI API key to generate AI summaries and answers. Local search will still work.")
+            st.warning("Google Gemini API key is unavailable.")
+        st.caption("Availability checks configuration only; Google validates the key when an AI feature is used.")
+
+        assistant = get_assistant(gemini_api_key=api_key)
 
         top_k = st.slider("Source passages per answer", min_value=1, max_value=8, value=4)
         if st.button("Clear chat history", use_container_width=True):
@@ -104,6 +186,8 @@ def main() -> None:
         st.divider()
         st.caption("Clearing the index removes all indexed documents.")
         clear_button = st.button("Clear document index", use_container_width=True)
+
+    apply_app_styles(theme)
 
     st.subheader("Upload documents")
     uploaded_files = st.file_uploader(
@@ -127,7 +211,7 @@ def main() -> None:
 
     if clear_button:
         try:
-            assistant = get_assistant(openai_api_key=api_key)
+            assistant = get_assistant(gemini_api_key=api_key)
             assistant.clear_documents()
             st.session_state.messages = []
             st.session_state.document_summaries = {}
@@ -135,8 +219,6 @@ def main() -> None:
             st.rerun()
         except Exception as exc:  # pragma: no cover
             st.error(f"Failed to clear the document index: {exc}")
-
-    assistant = get_assistant(openai_api_key=api_key)
 
     if process_button:
         if not uploaded_files:
@@ -146,12 +228,11 @@ def main() -> None:
         progress = st.progress(0)
         status = st.empty()
 
+        existing_names = {item["file_name"] for item in assistant.document_summary()}
         processed_count = 0
         for index, uploaded_file in enumerate(uploaded_files, start=1):
             try:
-                safe_name = Path(uploaded_file.name).name
-                if not safe_name:
-                    raise ValueError("The uploaded file has no valid filename.")
+                safe_name = unique_document_name(uploaded_file.name, existing_names)
                 saved_path = DATA_DIR / safe_name
                 saved_path.parent.mkdir(parents=True, exist_ok=True)
                 with saved_path.open("wb") as handle:
@@ -159,6 +240,7 @@ def main() -> None:
 
                 result = assistant.process_document(saved_path, file_name=safe_name)
                 st.session_state.document_summaries.pop(safe_name, None)
+                existing_names.add(safe_name)
                 processed_count += 1
                 status.info(
                     f"Processed {index}/{len(uploaded_files)}: {safe_name} "
@@ -239,43 +321,69 @@ def main() -> None:
     )
     if not document_names:
         st.info("Upload and process at least one document to start asking questions.")
+    else:
+        st.caption("Ask about document details or its summary. Recent messages are used for follow-up questions.")
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message.get("error"):
+                st.error(message["content"])
+            else:
+                st.markdown(message["content"])
             if message.get("sources"):
-                with st.expander(f"View {len(message['sources'])} exact source passage(s)"):
-                    for source in message["sources"]:
+                visible_sources = message["sources"][:top_k]
+                with st.expander(f"View {len(visible_sources)} exact source passage(s)"):
+                    for source in visible_sources:
                         render_source_context(source)
 
-    user_question = st.chat_input(
+    question_input = st.chat_input(
         "Ask about the selected documents...",
         disabled=not document_names or not selected_documents,
     )
-    if user_question:
+
+    if question_input and question_input.strip():
+        user_question = question_input.strip()
         st.session_state.messages.append({"role": "user", "content": user_question})
-        with st.chat_message("user"):
-            st.markdown(user_question)
 
         try:
-            result = assistant.answer_question(
-                user_question,
-                top_k=top_k,
-                file_names=selected_documents,
-            )
+            selected_summaries = [
+                {
+                    "file_name": file_name,
+                    **st.session_state.document_summaries[file_name],
+                }
+                for file_name in selected_documents
+                if file_name in st.session_state.document_summaries
+            ]
+            conversation_history = [
+                message
+                for message in st.session_state.messages[:-1]
+                if not message.get("error")
+            ][-6:]
+            with st.spinner("Searching your documents and preparing an answer..."):
+                result = assistant.answer_question(
+                    user_question,
+                    top_k=top_k,
+                    file_names=selected_documents,
+                    summary_context=selected_summaries,
+                    conversation_history=conversation_history,
+                )
             answer = result["answer"]
             sources = result["sources"]
-            st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
-            with st.chat_message("assistant"):
-                st.markdown(answer)
-                with st.expander(f"View {len(sources)} exact source passage(s)"):
-                    for source in sources:
-                        render_source_context(source)
+            ai_warning = result.get("ai_warning")
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": sources,
+                    "ai_warning": ai_warning,
+                }
+            )
         except Exception as exc:
             error_message = f"I couldn't answer that question from the indexed document: {exc}"
-            st.session_state.messages.append({"role": "assistant", "content": error_message, "sources": []})
-            with st.chat_message("assistant"):
-                st.markdown(error_message)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": error_message, "sources": [], "error": True}
+            )
+        st.rerun()
 
 
 if __name__ == "__main__":

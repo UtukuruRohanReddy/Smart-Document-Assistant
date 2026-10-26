@@ -45,7 +45,7 @@ class VectorStoreTests(unittest.TestCase):
             store = FAISSDocumentStore(directory)
             vectors = np.zeros((1, 1536), dtype="float32")
             vectors[0, 0] = 1
-            store.add_document("openai.txt", ["passage"], vectors)
+            store.add_document("large-dimension.txt", ["passage"], vectors)
 
             store.clear()
 
@@ -53,6 +53,35 @@ class VectorStoreTests(unittest.TestCase):
             self.assertEqual(store._index.ntotal, 0)
             reloaded = FAISSDocumentStore(directory)
             self.assertEqual(reloaded._index.d, 1536)
+
+    def test_text_search_ranks_query_terms_and_respects_document_filter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FAISSDocumentStore(directory)
+            store.add_document(
+                "objectives.txt",
+                [
+                    "The project objectives are to automate exams and grading.",
+                    "The interface uses a clean layout.",
+                ],
+                np.asarray([[1, 0], [0, 1]], dtype="float32"),
+            )
+            store.add_document(
+                "other.txt",
+                ["A separate document describes deployment."],
+                np.asarray([[0.5, 0.5]], dtype="float32"),
+            )
+
+            results = store.search_text(
+                "What are the project objectives?",
+                k=2,
+                file_names=["objectives.txt"],
+            )
+
+            self.assertEqual(
+                [item["text"] for item in results],
+                ["The project objectives are to automate exams and grading."],
+            )
+            self.assertGreater(results[0]["score"], 0)
 
     def test_index_metadata_mismatch_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -76,6 +105,34 @@ class VectorStoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "corrupted"):
                 FAISSDocumentStore(directory)
             self.assertEqual(metadata_path.read_text(encoding="utf-8"), malformed)
+
+    def test_blocked_faiss_legacy_index_uses_persistent_text_search(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "faiss_index.index").write_bytes(b"blocked legacy index")
+            (root / "chunks_metadata.json").write_text(
+                '[{"id":0,"file_name":"notes.txt","text":"Important project objectives",'
+                '"source":"notes.txt#chunk-1"}]',
+                encoding="utf-8",
+            )
+
+            store = FAISSDocumentStore(root)
+            self.assertFalse(store.vector_search_available)
+            self.assertEqual(
+                store.search_text("project objectives")[0]["file_name"],
+                "notes.txt",
+            )
+            store.add_document("new.txt", ["New searchable material."], None)
+            reloaded = FAISSDocumentStore(root)
+
+            self.assertEqual(
+                [item["file_name"] for item in reloaded.document_summary()],
+                ["new.txt", "notes.txt"],
+            )
+            self.assertEqual(
+                reloaded.search_text("searchable material")[0]["file_name"],
+                "new.txt",
+            )
 
 
 if __name__ == "__main__":
